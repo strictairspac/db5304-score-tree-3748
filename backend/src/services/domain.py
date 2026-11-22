@@ -94,23 +94,34 @@ def validate(payload) -> None:
     _read_payload(payload)
 
 
-def solve(payload, engine):
-    """Rebuild an isolated logical index. The application owns persistence."""
+def solve(payload, engine=None, held=None):
+    """Rebuild an isolated logical index. The application owns persistence.
+
+    ``held`` maps score number to copies already held by earlier lending orders
+    of the same catalog batch; those copies are deducted from what this range
+    lookup reports as lendable.
+    """
     capacity, first, last, scores = _read_payload(payload)
+    held = held or {}
+    effective = {score.number: max(score.available_copies - held.get(score.number, 0), 0)
+                 for score in scores}
     tree = BPlusTree(capacity)
     for score in scores:
         tree.insert(score)
 
     pages, checks, height = tree.inspect(len(scores))
     result = tree.lookup(first, last)
-    lending_rows = [
-        {'曲谱编号': score.number, '谱名': score.title, '可借份数': score.available_copies,
-         '借阅判定': '可拣配' if score.available_copies else '候补', '叶页号': page_id}
-        for page_id, score in result.matches
-    ]
+    lending_rows = []
+    for page_id, score in result.matches:
+        available = effective[score.number]
+        lending_rows.append({
+            '曲谱编号': score.number, '谱名': score.title, '可借份数': available,
+            '已留份数': held.get(score.number, 0),
+            '借阅判定': '可拣配' if available else '候补', '叶页号': page_id,
+        })
     found = len(lending_rows)
-    ready = sum(score.available_copies > 0 for _, score in result.matches)
-    copies = sum(score.available_copies for _, score in result.matches)
+    ready = sum(effective[score.number] > 0 for _, score in result.matches)
+    copies = sum(effective[score.number] for _, score in result.matches)
     leaf_splits = sum(split.page_type == '叶页' for split in tree.splits)
     visit_rows = [
         {'顺序': index, '叶页号': visit.page_id, '最小编号': visit.first_key,

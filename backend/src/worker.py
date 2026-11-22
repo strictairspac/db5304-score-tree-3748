@@ -5,6 +5,7 @@ from time import sleep
 
 from src.config.settings import ARTIFACTS, cache, engine
 from src.services.domain import solve
+from src.services.lending import held_by_case
 from src.services.workflow import claim, finish
 
 HEARTBEAT = Path(ARTIFACTS) / 'worker-heartbeat'
@@ -25,12 +26,12 @@ def work():
             if not job:
                 cache.brpop('worker:wake', timeout=1)
                 continue
-            run_id, token, payload = job
+            run_id, token, payload, case_id = job
             stop = Event()
             thread = Thread(target=heartbeat, args=(stop,), daemon=True)
             thread.start()
             try:
-                result = solve(payload, engine)
+                result = solve(payload, engine, held=held_by_case(case_id))
                 finish(run_id, token, result=result)
             except (ValueError, KeyError, TypeError) as exc:
                 finish(run_id, token, error=str(exc)[:500])

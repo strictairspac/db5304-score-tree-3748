@@ -4,8 +4,8 @@ from sqlalchemy import text
 from src.config.settings import cache, engine
 from src.controllers.workflow import download
 from src.models.tables import audit, cases, evidence, runs
-from src.schemas.workflow import CaseForm, LoginForm, ReviewForm
-from src.services import domain, workflow
+from src.schemas.workflow import CaseForm, LoginForm, OrderForm, ReviewForm
+from src.services import domain, lending, workflow
 from src.services.security import current_user, login, operator, reviewer
 
 router = APIRouter()
@@ -62,6 +62,32 @@ def export_evidence(identity: int, _=Depends(current_user)):
 @router.post('/evidence/{identity}/review')
 def review_evidence(identity: int, form: ReviewForm, actor=Depends(reviewer)):
     return workflow.review(identity, form.note, actor)
+
+
+@router.get('/lending/orders')
+def list_lending_orders(_=Depends(current_user)):
+    return lending.list_orders()
+
+
+@router.get('/lending/orders/{identity}')
+def get_lending_order(identity: int, _=Depends(current_user)):
+    return lending.get_order(identity)
+
+
+@router.post('/lending/orders', status_code=201)
+def create_lending_order(form: OrderForm, actor=Depends(operator)):
+    return lending.create_order(form.case_id, form.start_number, form.end_number,
+                                form.request_key, actor)
+
+
+@router.post('/lending/orders/{identity}/cancel')
+def cancel_lending_order(identity: int, actor=Depends(operator)):
+    return lending.cancel_order(identity, actor)
+
+
+@router.get('/lending/inventory/{case_id}')
+def read_lending_inventory(case_id: int, _=Depends(current_user)):
+    return lending.inventory(case_id)
 
 
 @router.get('/audit')

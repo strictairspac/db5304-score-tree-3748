@@ -6,6 +6,7 @@ from src.config.settings import IS_MYSQL, engine
 from src.constants.workflow import Role
 from src.models.tables import audit, cases, evidence, runs, schema, users
 from src.services.domain import SPEC
+from src.services.lending import ensure_inventory
 from src.services.security import hash_password
 from src.utils.time import utc_time
 
@@ -18,6 +19,12 @@ def keep_existing(conn, table, key, values):
     conn.execute(statement)
 
 
+def backfill_inventory(conn):
+    """Create inventory rows for catalog batches saved before lending existed."""
+    for case_id, payload in conn.execute(select(cases.c.id, cases.c.payload)).all():
+        ensure_inventory(conn, case_id, (payload or {}).get('scores') or [])
+
+
 def seed():
     with engine.begin() as conn:
         for role in Role:
@@ -25,6 +32,7 @@ def seed():
                 'password_hash': hash_password('Demo-Walkthrough-2026')})
         keep_existing(conn, cases, 'slug', {'slug': 'demo', 'title': SPEC['name'],
             'payload': SPEC['sample'], 'author': 'demo', 'created_at': utc_time()})
+        backfill_inventory(conn)
         return {table.name: conn.execute(select(func.count()).select_from(table)).scalar_one()
                 for table in (users, cases, runs, evidence, audit)}
 

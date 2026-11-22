@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select
 from src.config.settings import cache, engine
 from src.constants.workflow import Status
 from src.models.tables import audit, cases, evidence, runs
-from src.services import domain
+from src.services import domain, lending
 from src.utils.encoding import canonical
 from src.utils.time import utc_time
 
@@ -42,6 +42,7 @@ def make_case(title, payload, actor):
     with engine.begin() as conn:
         case_id = conn.execute(cases.insert().values(slug=uuid.uuid4().hex, title=title, payload=payload,
                                author=actor, created_at=utc_time())).inserted_primary_key[0]
+        lending.ensure_inventory(conn, case_id, payload.get('scores') or [])
         log(conn, actor, 'create_case', case_id)
         return found(conn, cases, case_id)
 
@@ -73,7 +74,7 @@ def claim():
         token = str(uuid.uuid4())
         conn.execute(runs.update().where(runs.c.id == run.id).values(
             started_at=utc_time(), status=Status.RUNNING, attempt_token=token))
-        return run.id, token, found(conn, cases, run.case_id)['payload']
+        return run.id, token, found(conn, cases, run.case_id)['payload'], run.case_id
 
 
 def finish(run_id, token, result=None, error=None):
